@@ -11,7 +11,7 @@ function delay(ms) {
  const executablePath = '/usr/bin/chromium';
 async function run() {
   const browser = await puppeteer.launch({
-    headless: false,
+   // headless: false,
      executablePath,
     args: [
       '--no-sandbox',
