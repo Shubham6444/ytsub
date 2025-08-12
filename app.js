@@ -73,4 +73,4 @@ async function run() {
 }
 
 run();
-youtube_auto_play_shorts_full.js
+
