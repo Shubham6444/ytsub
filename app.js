@@ -76,26 +76,42 @@ async function run() {
       return;
     }
 
-    // Visit each video and watch for 3 seconds
-    for (const url of videoUrls) {
-      console.log(`▶️ Playing video: ${url}`);
-      await page.goto(url, { waitUntil: 'networkidle2' });
-      await delay(2000);
+  // Helper delay function
+function delay(ms) {
+  return new Promise(resolve => setTimeout(resolve, ms));
+}
 
-      try {
-        await page.keyboard.press('k');  // Play/pause toggle
-      } catch {}
+for (const url of videoUrls) {
+  console.log(`▶️ Playing video: ${url}`);
+  await page.goto(url, { waitUntil: 'networkidle2' });
 
-      await delay(3000);  // Watch for 3 seconds
+  // Wait for video element to load
+  await page.waitForSelector('video');
+
+  // Play the video and get duration
+  const videoDuration = await page.evaluate(() => {
+    const video = document.querySelector('video');
+    if (!video) return 0;
+
+    // Play video if paused
+    if (video.paused) {
+      video.play();
     }
 
-    console.log('✅ Finished playing all videos.');
+    return video.duration * 1000; // duration in milliseconds
+  });
 
-  } catch (err) {
-    console.error('❌ Error:', err);
-  } finally {
-    await browser.close();
+  if (videoDuration > 0) {
+    console.log(`⏳ Watching video for ${videoDuration / 1000} seconds...`);
+    await delay(videoDuration + 1000); // add a small buffer of 1 sec
+  } else {
+    console.log('⚠️ Could not get video duration, waiting 10 seconds instead.');
+    await delay(10000);
   }
+}
+
+console.log('✅ Finished playing all videos.');
+
 }
 
 run();
