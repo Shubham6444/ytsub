@@ -8,18 +8,21 @@ function delay(ms) {
   return new Promise(res => setTimeout(res, ms));
 }
 
-const executablePath = '/usr/bin/chromium';  // Your system chromium path
+const executablePath = '/usr/bin/chromium'; // Change if your chromium path differs
 
 async function run() {
   const browser = await puppeteer.launch({
-    // Set to true if you want no browser UI
-    headless: true,
-
+    headless: true, // Run headless for no GUI (needed for most containers)
     executablePath,
     args: [
       '--no-sandbox',
       '--disable-setuid-sandbox',
       '--disable-blink-features=AutomationControlled',
+      '--disable-dev-shm-usage',
+      '--disable-gpu',
+      '--single-process',
+      '--disable-software-rasterizer',
+      '--headless=new', // Use new headless mode; or '--headless' for older Puppeteer
       '--start-maximized',
     ],
     defaultViewport: null,
@@ -28,7 +31,7 @@ async function run() {
   try {
     const page = await browser.newPage();
 
-    // Go to the Shorts tab URL (channel_url/shorts)
+    // Construct the Shorts URL from the base channel URL
     let shortsUrl = CHANNEL_URL;
     if (!shortsUrl.endsWith('/shorts')) {
       shortsUrl = shortsUrl.replace(/\/$/, '') + '/shorts';
@@ -37,24 +40,27 @@ async function run() {
     console.log(`Navigating to Shorts URL: ${shortsUrl}`);
     await page.goto(shortsUrl, { waitUntil: 'networkidle2' });
 
+    // Wait explicitly for Shorts thumbnails to appear
+    await page.waitForSelector('a#thumbnail[href*="/shorts/"]', { timeout: 10000 }).catch(() => {
+      console.warn('Warning: Shorts thumbnails did not appear within 10 seconds.');
+    });
+
     // Scroll multiple times to load more Shorts videos
-    for (let i = 0; i < 15; i++) {
+    for (let i = 0; i < 20; i++) {
       await page.evaluate(() => window.scrollBy(0, window.innerHeight));
-      await delay(2500);
+      await delay(3000);
     }
 
-    // Optional: screenshot to debug page content during development
-    // await page.screenshot({ path: 'shorts_page.png', fullPage: true });
-
-    // Extract unique Shorts video URLs with improved selector logic
+    // Extract unique Shorts URLs from anchors that have /shorts/ in href
     const shortsUrls = await page.evaluate(() => {
-      // Try to get all anchors with href containing '/shorts/'
-      const anchors = Array.from(document.querySelectorAll('a'));
-      const urls = anchors
-        .map(a => a.href)
-        .filter(href => href && href.includes('/shorts/'));
-
-      return [...new Set(urls)]; // Remove duplicates
+      const anchors = Array.from(document.querySelectorAll('a#thumbnail[href*="/shorts/"]'));
+      if (anchors.length > 0) {
+        return [...new Set(anchors.map(a => a.href))];
+      }
+      // Fallback if above fails: all anchors containing /shorts/
+      const fallbackAnchors = Array.from(document.querySelectorAll('a'))
+        .filter(a => a.href.includes('/shorts/'));
+      return [...new Set(fallbackAnchors.map(a => a.href))];
     });
 
     console.log(`Found ${shortsUrls.length} unique Shorts videos.`);
@@ -64,11 +70,11 @@ async function run() {
       return;
     }
 
-    // Play each Short video for about 3 seconds
+    // Play each Short video for 3 seconds
     for (const url of shortsUrls) {
       console.log(`▶️ Playing Short: ${url}`);
       await page.goto(url, { waitUntil: 'networkidle2' });
-      await delay(3000); // wait for player to load and play
+      await delay(3000); // wait for player to load and autoplay
 
       // Shorts usually autoplay, but press 'k' to toggle play/pause just in case
       try {
@@ -81,7 +87,6 @@ async function run() {
     }
 
     console.log('✅ Finished playing all Shorts.');
-
   } catch (err) {
     console.error('❌ Error:', err);
   } finally {
