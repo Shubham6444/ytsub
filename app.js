@@ -8,7 +8,7 @@ function delay(ms) {
   return new Promise(res => setTimeout(res, ms));
 }
 
-const executablePath = '/usr/bin/chromium';  // Your chromium executable in container
+const executablePath = '/usr/bin/chromium';
 
 async function run() {
   const browser = await puppeteer.launch({
@@ -27,13 +27,9 @@ async function run() {
   try {
     const page = await browser.newPage();
 
-    // Set user agent to a modern Chrome on Windows (helps avoid bot detection)
     await page.setUserAgent('Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/115.0.0.0 Safari/537.36');
-
-    // Set viewport size (important in headless)
     await page.setViewport({ width: 1280, height: 800 });
 
-    // Prepare URL for videos tab
     let videosPage = CHANNEL_URL;
     if (!videosPage.endsWith('/videos')) {
       videosPage = videosPage.replace(/\/$/, '') + '/videos';
@@ -42,20 +38,31 @@ async function run() {
     console.log(`Navigating to videos page: ${videosPage}`);
     await page.goto(videosPage, { waitUntil: 'networkidle2' });
 
-    // Wait for thumbnails to appear (timeout after 15 seconds)
-    await page.waitForSelector('a#thumbnail', { timeout: 15000 });
+    // Handle consent popup if any
+    try {
+      const consentButton = await page.$('button[aria-label="Accept all"]');
+      if (consentButton) {
+        console.log('Clicking consent button');
+        await consentButton.click();
+        await delay(3000);
+      }
+    } catch {}
 
-    // Scroll down multiple times to load more videos
-    for (let i = 0; i < 10; i++) {
-      await page.evaluate(() => window.scrollBy(0, window.innerHeight));
-      await delay(2500);
+    // Wait longer for page content to load
+    await page.waitForTimeout(20000);
+
+    // Debug screenshot (optional)
+    // await page.screenshot({ path: 'page.png', fullPage: true });
+
+    // Check how many thumbnails
+    const thumbnailsCount = await page.evaluate(() => document.querySelectorAll('a#thumbnail').length);
+    console.log(`Thumbnails found after wait: ${thumbnailsCount}`);
+    if (thumbnailsCount === 0) {
+      console.warn('No thumbnails found after wait. Exiting.');
+      return;
     }
 
-    // Debug: count how many thumbnails found
-    const count = await page.evaluate(() => document.querySelectorAll('a#thumbnail').length);
-    console.log(`Number of thumbnails found on page: ${count}`);
-
-    // Extract all video URLs with 'watch' in href
+    // Extract video URLs using robust selector
     const videoUrls = await page.$$eval('a#thumbnail', anchors =>
       anchors
         .map(a => a.href)
@@ -65,24 +72,26 @@ async function run() {
     console.log(`Found ${videoUrls.length} videos.`);
 
     if (videoUrls.length === 0) {
-      console.warn('No videos found. Try increasing scroll count or checking selectors.');
+      console.warn('No videos found. Try increasing scroll count or check selectors.');
       return;
     }
 
-    // Play each video for about 3 seconds
+    // Scroll to load more videos just in case
+    for (let i = 0; i < 5; i++) {
+      await page.evaluate(() => window.scrollBy(0, window.innerHeight));
+      await delay(2000);
+    }
+
     for (const url of videoUrls) {
       console.log(`▶️ Playing video: ${url}`);
       await page.goto(url, { waitUntil: 'networkidle2' });
-      await delay(2000); // wait for player to load
+      await delay(2000);
 
-      // Attempt to toggle play/pause (some videos auto play, some don't)
       try {
         await page.keyboard.press('k');
-      } catch (e) {
-        // ignore error
-      }
+      } catch {}
 
-      await delay(3000); // watch for 3 seconds
+      await delay(3000);
     }
 
     console.log('✅ Finished playing all videos.');
