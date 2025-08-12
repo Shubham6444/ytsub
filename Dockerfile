@@ -1,8 +1,8 @@
-# Use official Node.js image
 FROM node:18-slim
 
-# Install necessary dependencies for Chromium
+# Install necessary dependencies for Chromium + chromium itself
 RUN apt-get update && apt-get install -y \
+    chromium \
     wget \
     ca-certificates \
     fonts-liberation \
@@ -23,29 +23,16 @@ RUN apt-get update && apt-get install -y \
     --no-install-recommends && \
     rm -rf /var/lib/apt/lists/*
 
-# Create app directory
 WORKDIR /usr/src/app
 
-# Copy package.json and package-lock.json if you have (optional, faster builds)
 COPY package*.json ./
 
-# Install puppeteer-extra and stealth plugin
 RUN npm install puppeteer-extra puppeteer-extra-plugin-stealth
 
-# Copy your app.js script into container
 COPY app.js .
 
-# Puppeteer uses bundled Chromium automatically.
-# But to reduce size, you can install Chromium explicitly or rely on bundled.
-
-# Set environment variable to run Chromium with no sandbox (needed in many container environments)
-ENV PUPPETEER_EXECUTABLE_PATH=/usr/bin/chromium-browser
+# Point Puppeteer to correct Chromium executable
+ENV PUPPETEER_EXECUTABLE_PATH=/usr/bin/chromium
 ENV PUPPETEER_SKIP_CHROMIUM_DOWNLOAD=true
 
-# Install Chromium manually for execution path
-RUN apt-get update && apt-get install -y chromium
-
-# Expose no ports needed since this script just runs and exits
-
-# Command to run your app.js script
 CMD ["node", "app.js"]
