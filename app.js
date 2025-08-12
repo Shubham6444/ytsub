@@ -1,23 +1,25 @@
-
 const puppeteer = require('puppeteer-extra');
 const StealthPlugin = require('puppeteer-extra-plugin-stealth');
 puppeteer.use(StealthPlugin());
 
-const CHANNEL_URL = process.env.CHANNEL_URL || 'https://www.youtube.com/channel/UCB4gLXUL3SvZ1mPM6tspOkA';
+const CHANNEL_URL = process.env.CHANNEL_URL || 'https://www.youtube.com/@shubhamfreestyle';
 
 function delay(ms) {
   return new Promise(res => setTimeout(res, ms));
 }
- const executablePath = '/usr/bin/chromium';
+
+const executablePath = '/usr/bin/chromium';  // Your system chromium path
+
 async function run() {
   const browser = await puppeteer.launch({
-   // headless: false,
-     executablePath,
+    // Set to true if you want no browser UI
+    headless: false,
+    executablePath,
     args: [
       '--no-sandbox',
       '--disable-setuid-sandbox',
       '--disable-blink-features=AutomationControlled',
-      '--start-maximized'
+      '--start-maximized',
     ],
     defaultViewport: null,
   });
@@ -30,51 +32,51 @@ async function run() {
     if (!shortsUrl.endsWith('/shorts')) {
       shortsUrl = shortsUrl.replace(/\/$/, '') + '/shorts';
     }
+
+    console.log(`Navigating to Shorts URL: ${shortsUrl}`);
     await page.goto(shortsUrl, { waitUntil: 'networkidle2' });
 
-    // Scroll several times to load more Shorts videos
-    for (let i = 0; i < 10; i++) {
+    // Scroll multiple times to load more Shorts videos
+    for (let i = 0; i < 15; i++) {
       await page.evaluate(() => window.scrollBy(0, window.innerHeight));
-      await delay(2000); // wait for content to load
+      await delay(2500);
     }
 
-    // Extract unique Shorts video URLs
+    // Optional: screenshot to debug page content during development
+    // await page.screenshot({ path: 'shorts_page.png', fullPage: true });
+
+    // Extract unique Shorts video URLs with improved selector logic
     const shortsUrls = await page.evaluate(() => {
-      // Try selecting Shorts thumbnails inside ytd-reel-video-renderer elements
-      const anchors = Array.from(document.querySelectorAll('ytd-reel-video-renderer a#thumbnail'));
-      let urls = [];
-      if (anchors.length > 0) {
-        urls = anchors
-          .map(a => a.href)
-          .filter(href => href && href.includes('/shorts/'));
-      } else {
-        // Fallback: find any anchor with /shorts/ in href
-        urls = Array.from(document.querySelectorAll('a'))
-          .map(a => a.href)
-          .filter(href => href && href.includes('/shorts/'));
-      }
-      // Remove duplicates
-      return [...new Set(urls)];
+      // Try to get all anchors with href containing '/shorts/'
+      const anchors = Array.from(document.querySelectorAll('a'));
+      const urls = anchors
+        .map(a => a.href)
+        .filter(href => href && href.includes('/shorts/'));
+
+      return [...new Set(urls)]; // Remove duplicates
     });
 
     console.log(`Found ${shortsUrls.length} unique Shorts videos.`);
 
     if (shortsUrls.length === 0) {
       console.warn('No Shorts videos found. Try increasing scroll count or check selectors.');
+      return;
     }
 
-    // Play each Short video for 3 seconds
+    // Play each Short video for about 3 seconds
     for (const url of shortsUrls) {
       console.log(`▶️ Playing Short: ${url}`);
       await page.goto(url, { waitUntil: 'networkidle2' });
-      await delay(30000); // wait for player to load
+      await delay(3000); // wait for player to load and play
 
-      // Shorts usually autoplay, but just in case, press play toggle
+      // Shorts usually autoplay, but press 'k' to toggle play/pause just in case
       try {
         await page.keyboard.press('k');
-      } catch {}
+      } catch (e) {
+        // Ignore errors here
+      }
 
-      await delay(3000); // watch 3 seconds
+      await delay(3000); // watch for 3 seconds
     }
 
     console.log('✅ Finished playing all Shorts.');
