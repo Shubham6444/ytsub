@@ -13,7 +13,8 @@ const executablePath = '/usr/bin/chromium';  // Your system chromium path
 async function run() {
   const browser = await puppeteer.launch({
     // Set to true if you want no browser UI
-    headless: false,
+    headless: true,
+
     executablePath,
     args: [
       '--no-sandbox',
