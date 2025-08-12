@@ -2,7 +2,7 @@ const puppeteer = require('puppeteer-extra');
 const StealthPlugin = require('puppeteer-extra-plugin-stealth');
 puppeteer.use(StealthPlugin());
 
-const CHANNEL_URL = process.env.CHANNEL_URL || 'https://www.youtube.com/@shubhamfreestyle';
+const CHANNEL_URL = process.env.CHANNEL_URL || 'https://www.youtube.com/channel/UCB4gLXUL3SvZ1mPM6tspOkA';
 
 function delay(ms) {
   return new Promise(res => setTimeout(res, ms));
