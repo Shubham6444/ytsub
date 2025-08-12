@@ -8,11 +8,11 @@ const CHANNEL_URL = process.env.CHANNEL_URL || 'https://www.youtube.com/channel/
 function delay(ms) {
   return new Promise(res => setTimeout(res, ms));
 }
-// const executablePath = '/usr/bin/chromium-browser';
+ const executablePath = '/usr/bin/chromium-browser';
 async function run() {
   const browser = await puppeteer.launch({
     headless: false,
-    // executablePath,
+     executablePath,
     args: [
       '--no-sandbox',
       '--disable-setuid-sandbox',
