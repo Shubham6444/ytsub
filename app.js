@@ -1,6 +1,7 @@
 const express = require('express');
 const puppeteer = require('puppeteer-extra');
 const StealthPlugin = require('puppeteer-extra-plugin-stealth');
+const fs = require('fs');
 puppeteer.use(StealthPlugin());
 
 const app = express();
@@ -94,9 +95,30 @@ app.post('/start', async (req, res) => {
     return new Promise(r => setTimeout(r, ms));
   }
 
+  // Detect Chromium executable path from common locations
+  const possiblePaths = [
+    '/usr/bin/chromium',
+    '/usr/bin/chromium-browser',
+    '/usr/bin/google-chrome-stable',
+    '/usr/bin/google-chrome',
+  ];
+
+  let executablePath = null;
+  for (const path of possiblePaths) {
+    if (fs.existsSync(path)) {
+      executablePath = path;
+      break;
+    }
+  }
+
+  if (!executablePath) {
+    sendLog('❌ Chromium executable not found! Please install Chromium or update executable paths.');
+    return;
+  }
+
   try {
     sendLog(`🚀 Starting Puppeteer for video: ${VIDEO_URL}`);
-const executablePath = '/usr/bin/chromium';
+    sendLog(`🖥 Using Chromium executable: ${executablePath}`);
 
     const browser = await puppeteer.launch({
       headless: true,
@@ -105,7 +127,7 @@ const executablePath = '/usr/bin/chromium';
         '--no-sandbox',
         '--disable-setuid-sandbox',
         '--disable-blink-features=AutomationControlled',
-        '--start-maximized'
+        '--start-maximized',
       ],
       defaultViewport: null,
     });
@@ -170,6 +192,7 @@ const executablePath = '/usr/bin/chromium';
     await browser.close();
   } catch (err) {
     sendLog('❌ Error: ' + err.message);
+    console.error(err);
   }
 });
 
