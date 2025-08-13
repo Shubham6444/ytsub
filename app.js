@@ -1,110 +1,178 @@
+const express = require('express');
 const puppeteer = require('puppeteer-extra');
 const StealthPlugin = require('puppeteer-extra-plugin-stealth');
 puppeteer.use(StealthPlugin());
 
-const CHANNEL_URL = process.env.CHANNEL_URL || 'https://www.youtube.com/channel/UCB4gLXUL3SvZ1mPM6tspOkA';
+const app = express();
+const PORT = 3000;
 
-// Custom delay helper
-function delay(ms) {
-  return new Promise(res => setTimeout(res, ms));
+app.use(express.urlencoded({ extended: true }));
+
+// Serve UI form
+app.get('/', (req, res) => {
+  res.send(`
+    <!DOCTYPE html>
+    <html>
+    <head><title>YouTube Auto Play Single Video</title></head>
+    <body>
+      <h1>YouTube Auto Play Single Video</h1>
+      <form id="form" method="POST" action="/start">
+        <label>YouTube Video URL: </label>
+        <input type="url" name="videoUrl" placeholder="https://youtu.be/..." style="width:400px" required>
+        <button type="submit">Start Playing</button>
+      </form>
+
+      <h2>Logs:</h2>
+      <pre id="log" style="background:#eee; height:300px; overflow:auto; padding:10px;"></pre>
+
+      <script>
+        const form = document.getElementById('form');
+        const log = document.getElementById('log');
+
+        form.addEventListener('submit', e => {
+          e.preventDefault();
+          log.textContent = '';
+
+          const videoUrl = form.videoUrl.value;
+          if (!videoUrl) return alert('Please enter a video URL');
+
+          const evtSource = new EventSource('/logs');
+
+          evtSource.onmessage = function(event) {
+            log.textContent += event.data + '\\n';
+            log.scrollTop = log.scrollHeight;
+            if(event.data.includes('✅ Finished playing video.') || event.data.includes('❌ Error:')) {
+              evtSource.close();
+            }
+          };
+
+          fetch('/start', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+            body: 'videoUrl=' + encodeURIComponent(videoUrl)
+          });
+        });
+      </script>
+    </body>
+    </html>
+  `);
+});
+
+// Store clients connected for SSE
+const clients = [];
+
+app.get('/logs', (req, res) => {
+  res.set({
+    'Content-Type': 'text/event-stream',
+    'Cache-Control': 'no-cache',
+    Connection: 'keep-alive',
+  });
+  res.flushHeaders();
+
+  clients.push(res);
+
+  req.on('close', () => {
+    const index = clients.indexOf(res);
+    if (index !== -1) clients.splice(index, 1);
+  });
+});
+
+// Function to send logs to all clients
+function sendLog(message) {
+  clients.forEach(res => {
+    res.write(`data: ${message}\n\n`);
+  });
 }
 
-const executablePath = '/usr/bin/chromium';  // Adjust if needed
+app.post('/start', async (req, res) => {
+  const VIDEO_URL = req.body.videoUrl;
+  if (!VIDEO_URL) return res.status(400).send('Video URL required');
 
-async function run() {
-  const browser = await puppeteer.launch({
-    headless: true,
-    executablePath,
-    args: [
-      '--no-sandbox',
-      '--disable-setuid-sandbox',
-      '--disable-blink-features=AutomationControlled',
-      '--disable-dev-shm-usage',
-      '--start-maximized',
-    ],
-    defaultViewport: null,
-  });
+  res.send('Started'); // immediate response
+
+  function delay(ms) {
+    return new Promise(r => setTimeout(r, ms));
+  }
 
   try {
+    sendLog(`🚀 Starting Puppeteer for video: ${VIDEO_URL}`);
+const executablePath = '/usr/bin/chromium';
+
+    const browser = await puppeteer.launch({
+      headless: true,
+      executablePath,
+      args: [
+        '--no-sandbox',
+        '--disable-setuid-sandbox',
+        '--disable-blink-features=AutomationControlled',
+        '--start-maximized'
+      ],
+      defaultViewport: null,
+    });
+
     const page = await browser.newPage();
 
-    // Set user agent and viewport
-    await page.setUserAgent('Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/115.0.0.0 Safari/537.36');
-    await page.setViewport({ width: 1280, height: 800 });
+    sendLog(`⏳ Navigating to video: ${VIDEO_URL}`);
+    await page.goto(VIDEO_URL, { waitUntil: 'networkidle2' });
+    await delay(2000); // wait for player load
 
-    // Prepare videos page URL
-    let videosPage = CHANNEL_URL;
-    if (!videosPage.endsWith('/videos')) {
-      videosPage = videosPage.replace(/\/$/, '') + '/videos';
-    }
-
-    console.log(`Navigating to videos page: ${videosPage}`);
-    await page.goto(videosPage, { waitUntil: 'networkidle2' });
-
-    // Handle cookie consent if present
-    try {
-      const consentButton = await page.$('button[aria-label="Accept all"]');
-      if (consentButton) {
-        console.log('Clicking consent button');
-        await consentButton.click();
-        await delay(3000);
-      }
-    } catch {}
-
-    // Wait for videos to load
-    await delay(15000);
-
-    // Scroll to load more videos
-    for (let i = 0; i < 5; i++) {
-      await page.evaluate(() => window.scrollBy(0, window.innerHeight));
-      await delay(2000);
-    }
-
-    // Extract video URLs
-    const videoUrls = await page.$$eval('a#thumbnail', anchors =>
-      anchors
-        .map(a => a.href)
-        .filter(href => href.includes('watch'))
-    );
-
-    console.log(`Found ${videoUrls.length} videos.`);
-
-    if (videoUrls.length === 0) {
-      console.warn('No videos found after scrolling.');
-      return;
-    }
-
-    // Play each video fully
-    for (const url of videoUrls) {
-      console.log(`▶️ Playing video: ${url}`);
-      await page.goto(url, { waitUntil: 'networkidle2' });
-
-      await page.waitForSelector('video');
-
-      // Play video and get duration in ms
-      const videoDuration = await page.evaluate(() => {
+    // Play video from start
+    await page.evaluate(() => {
+      return new Promise((resolve) => {
         const video = document.querySelector('video');
-        if (!video) return 0;
-        if (video.paused) video.play();
-        return video.duration * 1000;
+        if (!video) {
+          resolve();
+          return;
+        }
+        video.currentTime = 0;
+
+        const tryPlay = () => {
+          video.play().then(() => {
+            if (!video.paused && !video.ended) {
+              resolve();
+            } else {
+              setTimeout(tryPlay, 500);
+            }
+          }).catch(() => {
+            setTimeout(tryPlay, 500);
+          });
+        };
+        tryPlay();
       });
+    });
 
-      // Wait for video to play fully (+1 sec buffer)
-      if (videoDuration > 0) {
-        console.log(`⏳ Watching video for ${videoDuration / 1000} seconds...`);
-        await delay(videoDuration + 1000);
-      } else {
-        console.log('⚠️ Could not get video duration, waiting 10 seconds instead.');
-        await delay(10000);
+    // Wait for ads to finish
+    await page.evaluate(() => new Promise(resolve => {
+      const checkAds = () => {
+        if (!document.querySelector('.ad-showing')) resolve();
+        else setTimeout(checkAds, 1000);
+      };
+      checkAds();
+    }));
+
+    // Wait for video to end
+    await page.evaluate(() => new Promise(resolve => {
+      const video = document.querySelector('video');
+      if (!video) {
+        setTimeout(resolve, 10000);
+        return;
       }
-    }
+      if (video.ended) {
+        resolve();
+        return;
+      }
+      video.addEventListener('ended', () => resolve());
+    }));
 
-    console.log('✅ Finished playing all videos.');
-  } catch (err) {
-    console.error('❌ Error:', err);
-  } finally {
+    sendLog(`⏹️ Video ended: ${VIDEO_URL}`);
+    sendLog('✅ Finished playing video.');
+
     await browser.close();
+  } catch (err) {
+    sendLog('❌ Error: ' + err.message);
   }
-}
+});
 
-run();
+app.listen(PORT, () => {
+  console.log(`Server running at http://localhost:${PORT}`);
+});
