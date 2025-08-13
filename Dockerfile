@@ -27,12 +27,15 @@ WORKDIR /usr/src/app
 
 COPY package*.json ./
 
+# Install your dependencies and pm2 globally
 RUN npm install puppeteer-extra puppeteer-extra-plugin-stealth
+RUN npm install pm2 -g
 
 COPY app.js .
 
-# Point Puppeteer to correct Chromium executable
+# Puppeteer config
 ENV PUPPETEER_EXECUTABLE_PATH=/usr/bin/chromium
 ENV PUPPETEER_SKIP_CHROMIUM_DOWNLOAD=true
 
-CMD ["node", "app.js"]
+# Start app with pm2 (app name "ytsub")
+CMD ["pm2-runtime", "start", "app.js", "--name", "ytsub", "--no-daemon"]
